@@ -244,22 +244,29 @@ All parameters below shall be editable via the dashboard. Default values shall b
 
 This section provides guidance for the engineering team. Final technology choices are at the discretion of the implementing engineer, subject to the constraints in Section 6.
 
-### 7.1 Recommended Stack
+### 7.1 Stack (as built)
 
-- **Language:** Python 3.11+ (native Apple Silicon support; strong ecosystem for data processing and dashboards)
-- **Dashboard framework:** Streamlit or Dash — both run as local web apps in the browser with no installation required beyond Python packages. Streamlit is recommended for its lower development overhead given the single-user context.
-- **Data processing:** Pandas and NumPy for time-series manipulation; Polars may be considered for performance on large 15-minute datasets
-- **Visualisation:** Plotly (integrates natively with both Streamlit and Dash); supports interactive charts
-- **Solar modelling:** pvlib-python (MIT-licensed, Apple Silicon compatible, handles full solar position and irradiance modelling pipeline)
-- **Configuration:** YAML files for cost defaults, rebates, and panel specs; Pydantic for validation
-- **Dependency management:** uv or pip with a requirements.txt; virtual environment isolation
+The implementation uses a dockerised, multi-service stack rather than a
+single-process Python app. This is a deliberate departure from earlier
+Streamlit-flavoured drafts: a real database and a typed API surface make the
+Phase 2 forecast / dispatch work additive rather than a rewrite, and the
+docker-compose stack runs identically on the target M2 Mac Mini and on any
+linux box for collaborator review.
+
+- **Database:** PostgreSQL 16 with the **TimescaleDB** extension. 15-minute timeseries are stored in hypertables; assumptions and scenarios live in regular relational tables. Postgres is exposed on host port `12456` for inspection via DBeaver / psql. All energy quantities are persisted as kWh per 15-min interval; all money is AUD; all temperatures are °C.
+- **Backend language:** **Go 1.22** (`net/http` with the 1.22 method-aware ServeMux + `pgx/v5` for Postgres). No web framework — the standard library is sufficient at this scale and minimises supply chain surface area.
+- **Migrations:** plain `*.sql` files embedded into the Go binary via `go:embed` and run on startup. No external migration tool.
+- **Frontend:** **Next.js 14** (App Router) + TypeScript + Tailwind + shadcn/ui primitives + Recharts for charts. Output is a standalone Node server in a multi-stage Docker build.
+- **Configuration:** all editable assumptions live in a `assumptions` table (one row per parameter, JSONB value) so the Assumptions screen can render and persist changes without schema migrations or YAML files (NFR-06: every assumption visible and editable in the UI).
+- **Solar modelling:** implemented in-house in Go (Haurwitz clear-sky GHI + simple solar position) — no `pvlib-python`. The shading derivation is described in §7.4.
+- **Orchestration:** `docker compose` with three services — `timescale`, `api`, `web`. Browser only talks to Next.js (`:3000`); Next.js rewrites `/api/*` to the Go service on the docker network.
 
 ### 7.2 Data Pipeline Architecture
 
-- **Stage 1 — Ingest:** Raw CSV files are parsed, validated, and stored as Parquet files in a local data directory. Gas bill totals are persisted as JSON.
-- **Stage 2 — Enrich:** Parquet data is joined with external reference data (weather, NEM prices, emissions factors). All enriched data stored as Parquet.
-- **Stage 3 — Model:** Baseline and scenario models operate on the enriched Parquet dataset. Outputs written to a results cache (Parquet or JSON).
-- **Stage 4 — Present:** Dashboard reads from results cache. Recalculation triggered on parameter change re-runs Stage 3 only — not re-ingestion.
+- **Stage 1 — Ingest:** Enphase / Amber CSV uploads are parsed and validated by the Go ingest module (`internal/ingest`) and upserted into the `energy_intervals` hypertable. Gas bill totals are inserted into the `gas_bills` table via the dashboard form. Every ingestion run is recorded in `ingestion_runs` for audit. On first boot a deterministic synthetic generator (`internal/seed`) populates 16 months of data so the dashboard renders end-to-end without real CSVs.
+- **Stage 2 — Enrich:** External reference data (weather, NEM prices, emissions factors) is joined into the same `energy_intervals` row at ingest time. The hypertable schema includes nullable forecast columns so Phase 2 weather / NEM forecasts can be backfilled without a schema migration.
+- **Stage 3 — Model:** The baseline service (`internal/baseline`) issues SQL aggregates against `energy_intervals` + `load_decomposition` to build per-day, per-hour, and per-month rollups. The scenario engine (`internal/scenarios`) runs the four upgrade modules against an in-memory baseline summary plus an assumptions snapshot, persists results to `scenario_results`, and exposes a brute-force `Explore` method that evaluates all 16 upgrade combinations for ranking.
+- **Stage 4 — Present:** The Next.js dashboard reads from the Go API. Saving any assumption automatically triggers a recompute of every saved scenario so the UI is always live; no separate refresh step is required.
 
 ### 7.3 Key Data Structures
 
@@ -299,10 +306,10 @@ carbon_payback_years
 
 ### 7.4 Solar Shading Model
 
-- Calculate theoretical clear-sky GHI at site coordinates for every 15-minute interval using a standard algorithm (e.g. Ineichen or Haurwitz model via pvlib-python)
-- Compare actual production against theoretical maximum to derive a per-interval shading/soiling loss factor
-- Apply a rolling percentile filter (e.g. P90 over a 30-day window) to separate persistent shading from transient cloud cover
-- The resulting shading matrix (hour-of-day × month) shall be applied to upgrade scenario yield calculations
+- Theoretical clear-sky GHI is calculated at site coordinates for every 15-minute interval using the Haurwitz model (`internal/solar`). The implementation is in-house Go — no `pvlib-python` dependency.
+- Actual production from `energy_intervals.solar_gen_kwh` is compared to theoretical to derive a per-cell efficiency factor in a `[12 month][24 hour]` shading matrix.
+- Future work: apply a rolling percentile filter (e.g. P90 over a 30-day window) to separate persistent shading from transient cloud cover. The Phase 1 implementation uses a straight ratio per cell.
+- The resulting shading matrix is applied to upgrade scenario yield calculations via `Service.EstimateAnnualYield`.
 
 ### 7.5 Phase 2 Integration Points
 
