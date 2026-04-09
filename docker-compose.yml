@@ -1,0 +1,64 @@
+name: phem
+
+services:
+  timescale:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: phem-timescale
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-phem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-phem}
+      POSTGRES_DB: ${POSTGRES_DB:-phem}
+    ports:
+      # Chris requested: postgres on 12456 (host) -> 5432 (container)
+      - "12456:5432"
+    volumes:
+      - phem-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phem} -d ${POSTGRES_DB:-phem}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: phem-api
+    restart: unless-stopped
+    environment:
+      PHEM_DB_HOST: timescale
+      PHEM_DB_PORT: 5432
+      PHEM_DB_USER: ${POSTGRES_USER:-phem}
+      PHEM_DB_PASSWORD: ${POSTGRES_PASSWORD:-phem}
+      PHEM_DB_NAME: ${POSTGRES_DB:-phem}
+      PHEM_HTTP_ADDR: ":8080"
+      PHEM_SEED_ON_EMPTY: "true"
+      PHEM_SITE_LAT: "-33.8688"
+      PHEM_SITE_LON: "151.2093"
+      PHEM_SITE_TZ: "Australia/Sydney"
+    depends_on:
+      timescale:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: phem-web
+    restart: unless-stopped
+    environment:
+      # Used by Next.js server-side fetches inside the docker network
+      PHEM_API_URL_INTERNAL: http://api:8080
+      # Used by browser-side fetches (proxied via Next.js rewrites, see next.config.mjs)
+      NEXT_PUBLIC_API_BASE: /api
+      NODE_ENV: production
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  phem-pgdata:

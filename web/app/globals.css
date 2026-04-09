@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 142 71% 36%;            /* leaf green — electrification go */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 142 71% 36%;
+    --radius: 0.65rem;
+
+    --solar:    35  92% 55%;
+    --grid:     220 14% 50%;
+    --battery:  142 71% 45%;
+    --gas:      18  90% 55%;
+    --ev:       217 91% 60%;
+    --hvac:     199 89% 48%;
+    --pool:     188 78% 41%;
+    --base:     220 14% 65%;
+    --cooking:  340 82% 56%;
+    --hotwater: 14  100% 57%;
+    --positive: 142 71% 45%;
+    --negative: 0 84% 60%;
+  }
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 213 31% 95%;
+    --card: 222 47% 9%;
+    --card-foreground: 213 31% 95%;
+    --primary: 142 71% 45%;
+    --primary-foreground: 222 47% 7%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 213 31% 95%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 213 31% 95%;
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 213 31% 95%;
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 142 71% 45%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body { @apply bg-background text-foreground; }
+  body {
+    font-feature-settings: "rlig" 1, "calt" 1, "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Recharts tooltips inherit dark mode */
+.recharts-default-tooltip {
+  @apply !bg-card !border !border-border !rounded-md !shadow-lg !text-foreground;
+}
+.recharts-tooltip-label {
+  @apply !text-foreground !font-medium;
+}
+.recharts-cartesian-axis-tick-value {
+  @apply fill-muted-foreground text-xs;
+}
