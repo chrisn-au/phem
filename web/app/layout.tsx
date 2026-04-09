@@ -10,11 +10,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body className="min-h-screen antialiased">
         <Nav />
         <main className="container py-8">{children}</main>
-        <Toaster position="bottom-right" richColors closeButton />
+        <Toaster theme="dark" position="bottom-right" richColors closeButton />
       </body>
     </html>
   );
